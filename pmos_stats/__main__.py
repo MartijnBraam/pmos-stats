@@ -60,6 +60,17 @@ def get_value(git_ref):
     return devices
 
 
+def get_devices_on_ref(ref):
+    command = ['git', 'checkout', ref]
+    subprocess.check_output(command, cwd='pmbootstrap')
+    devices = glob.glob('pmbootstrap/aports/device/device-*')
+    result = set()
+    for device in devices:
+        code = device.replace('pmbootstrap/aports/device/device-', '')
+        result.add(code)
+    return result
+
+
 @subcommand([argument('filename', help="Output filename")])
 def devices_over_time(args):
     init()
@@ -75,6 +86,23 @@ def devices_over_time(args):
     c = chart.Chart(dataset)
     with open(args.filename, 'w') as handle:
         handle.write(c.generate())
+
+
+@subcommand([argument('fromref', help='Oldest ref to check')])
+def new_devices(args):
+    init()
+    a = get_devices_on_ref(args.fromref)
+    b = get_devices_on_ref('master')
+
+    added = b - a
+    deleted = a - b
+    print('--added--')
+    for device in sorted(added):
+        print(device)
+
+    print('\n--deleted--')
+    for device in sorted(deleted):
+        print(device)
 
 
 if __name__ == "__main__":
