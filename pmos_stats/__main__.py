@@ -3,6 +3,7 @@ import subprocess
 import os
 import pmos_stats.chart as chart
 import argparse
+import re
 
 cli = argparse.ArgumentParser(description="postmarketOS Stats generator")
 subparsers = cli.add_subparsers(dest='subcommand')
@@ -71,6 +72,14 @@ def get_devices_on_ref(ref):
     return result
 
 
+def get_device_name(code):
+    infofile = 'pmbootstrap/aports/device/device-{}/deviceinfo'.format(code)
+    with open(infofile) as handle:
+        raw = handle.read()
+    name = re.search(r'deviceinfo_name="([^"]+)"', raw)
+    return name.group(1)
+
+
 @subcommand([argument('filename', help="Output filename")])
 def devices_over_time(args):
     init()
@@ -88,7 +97,8 @@ def devices_over_time(args):
         handle.write(c.generate())
 
 
-@subcommand([argument('fromref', help='Oldest ref to check')])
+@subcommand([argument('fromref', help='Oldest ref to check'),
+             argument('--html', help='Create HTML table', action="store_true")])
 def new_devices(args):
     init()
     a = get_devices_on_ref(args.fromref)
@@ -96,9 +106,19 @@ def new_devices(args):
 
     added = b - a
     deleted = a - b
+
+    if args.html:
+        print('<table>')
+        for device in sorted(added):
+            name = get_device_name(device)
+            print('<tr><td>{}</td><td>{}</td></tr>'.format(device, name))
+        print('</table>')
+        return
+
     print('--added--')
     for device in sorted(added):
-        print(device)
+        name = get_device_name(device)
+        print("{} ({})".format(device, name))
 
     print('\n--deleted--')
     for device in sorted(deleted):
