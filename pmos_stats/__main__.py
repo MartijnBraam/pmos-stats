@@ -1,12 +1,16 @@
 import glob
 import subprocess
 import os
+
+import requests
+
 import pmos_stats.chart as chart
 import argparse
 import re
 
 cli = argparse.ArgumentParser(description="postmarketOS Stats generator")
 subparsers = cli.add_subparsers(dest='subcommand')
+wiki_cache = None
 
 
 def subcommand(args=None, parent=subparsers):
@@ -80,6 +84,30 @@ def get_device_name(code):
     return name.group(1)
 
 
+def get_device_wiki_page(device):
+    global wiki_cache
+    if not wiki_cache:
+        wiki_cache = {}
+        raw = requests.get('https://wiki.postmarketos.org/index.php?title=Devices&action=raw').content.decode()
+
+        # There is UTF-8 multibyte spacing in the table somehow
+        clean = raw.encode('ascii', 'ignore').decode()
+
+        regex = r'\|-\s+\|[^\|]+\|[^\[]+\[\[([^\]]+)\]\]\W?\s+\|[^\|]+\|\s+([^\s]+)'
+        for match in re.findall(regex, clean):
+            page = match[0]
+            if '|' in page:
+                page = page.split('|')[0]
+            url = 'https://wiki.postmarketos.org/wiki/{}'.format(page)
+            wiki_cache[match[1]] = url
+
+    if device in ['nokia-n9', 'nokia-n950']:
+        return 'https://wiki.postmarketos.org/wiki/Nokia_N9'
+    if device == 'samsung-p4wifi':
+        return 'https://wiki.postmarketos.org/wiki/Samsung_Galaxy_Tab_10.1%22_(samsung-p4wifi)'
+    return wiki_cache[device]
+
+
 @subcommand([argument('filename', help="Output filename")])
 def devices_over_time(args):
     init()
@@ -98,7 +126,7 @@ def devices_over_time(args):
 
 
 @subcommand([argument('fromref', help='Oldest ref to check'),
-             argument('--html', help='Create HTML table', action="store_true")])
+             argument('--md', help='Create markdown list', action="store_true")])
 def new_devices(args):
     init()
     a = get_devices_on_ref(args.fromref)
@@ -107,12 +135,11 @@ def new_devices(args):
     added = b - a
     deleted = a - b
 
-    if args.html:
-        print('<table>')
+    if args.md:
         for device in sorted(added):
             name = get_device_name(device)
-            print('<tr><td>{}</td><td>{}</td></tr>'.format(device, name))
-        print('</table>')
+            url = get_device_wiki_page(device)
+            print('* [{name} `{code}`]({url})'.format(name=name, code=device, url=url))
         return
 
     print('--added--')
