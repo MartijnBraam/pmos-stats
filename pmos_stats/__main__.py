@@ -1,8 +1,28 @@
 import glob
 import subprocess
 import os
-import json
 import pmos_stats.chart as chart
+import argparse
+
+cli = argparse.ArgumentParser(description="postmarketOS Stats generator")
+subparsers = cli.add_subparsers(dest='subcommand')
+
+
+def subcommand(args=None, parent=subparsers):
+    args = args if args else []
+
+    def decorator(func):
+        name = func.__name__.replace('_', '-')
+        parser = parent.add_parser(name, description=func.__doc__)
+        for arg in args:
+            parser.add_argument(*arg[0], **arg[1])
+        parser.set_defaults(func=func)
+
+    return decorator
+
+
+def argument(*name_or_flags, **kwargs):
+    return ([*name_or_flags], kwargs)
 
 
 def init():
@@ -40,14 +60,8 @@ def get_value(git_ref):
     return devices
 
 
-def make_gnuplot(dataset):
-    result = "#Day\tDevices\n"
-    for line in dataset:
-        result += '{} 00:00:00\t{}\n'.format(*line)
-    return result
-
-
-if __name__ == '__main__':
+@subcommand([argument('filename', help="Output filename")])
+def devices_over_time(args):
     init()
 
     initial_commit = 'bfde354b22ae4efd79d1036f79a9aeb1ff1927ce'
@@ -57,13 +71,15 @@ if __name__ == '__main__':
         value = get_value(commit[0])
         if value is not None:
             dataset.append((commit[1], value))
-    result = make_gnuplot(dataset)
-    with open('chart.dat', 'w') as handle:
-        handle.write(result)
 
     c = chart.Chart(dataset)
-    with open('chart.svg', 'w') as handle:
+    with open(args.filename, 'w') as handle:
         handle.write(c.generate())
 
-    with open('dataset.json', 'w') as handle:
-        json.dump(dataset, handle)
+
+if __name__ == "__main__":
+    args = cli.parse_args()
+    if args.subcommand is None:
+        cli.print_help()
+    else:
+        args.func(args)
