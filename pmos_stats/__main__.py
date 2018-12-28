@@ -1,6 +1,7 @@
 import glob
 import subprocess
 import os
+import json
 
 import requests
 
@@ -31,8 +32,8 @@ def argument(*name_or_flags, **kwargs):
 
 
 def init():
-    if not os.path.isdir('pmbootstrap'):
-        command = ['git', 'clone', 'git@github.com:postmarketOS/pmbootstrap.git']
+    if not os.path.isdir('pmaports'):
+        command = ['git', 'clone', 'git@gitlab.com:postmarketOS/pmaports.git']
         subprocess.run(command)
 
 
@@ -40,7 +41,7 @@ def get_commit_per_day(start_ref, end_ref):
     command = ['git', 'log', '--reverse', '--ancestry-path', '{}..{}'.format(start_ref, end_ref)]
     command.append("--pretty=format:'%h %cd'")
     command.append("--date=format:'%Y-%m-%d'")
-    raw = subprocess.check_output(command, universal_newlines=True, cwd='pmbootstrap')
+    raw = subprocess.check_output(command, universal_newlines=True, cwd='pmaports')
     result = []
     last_date = ''
     for line in raw.splitlines(keepends=False):
@@ -53,31 +54,29 @@ def get_commit_per_day(start_ref, end_ref):
 
 def get_value(git_ref):
     command = ['git', 'checkout', git_ref]
-    subprocess.check_output(command, cwd='pmbootstrap')
-    if not os.path.isdir('pmbootstrap/aports'):
-        return None
-    if os.path.isdir('pmbootstrap/aports/device'):
-        devices = len(glob.glob('pmbootstrap/aports/device/device-*'))
-        kernels = len(glob.glob('pmbootstrap/aports/device/linux-*'))
-        kernels += len(glob.glob('pmbootstrap/aports/main/linux-*'))
+    subprocess.check_output(command, cwd='pmaports')
+    if os.path.isdir('pmaports/device'):
+        devices = len(glob.glob('pmaports/device/device-*'))
+        kernels = len(glob.glob('pmaports/device/linux-*'))
+        kernels += len(glob.glob('pmaports/main/linux-*'))
         return devices
-    devices = len(glob.glob('pmbootstrap/aports/device-*'))
+    devices = len(glob.glob('pmaports/device-*'))
     return devices
 
 
 def get_devices_on_ref(ref):
     command = ['git', 'checkout', ref]
-    subprocess.check_output(command, cwd='pmbootstrap')
-    devices = glob.glob('pmbootstrap/aports/device/device-*')
+    subprocess.check_output(command, cwd='pmaports')
+    devices = glob.glob('pmaports/device/device-*')
     result = set()
     for device in devices:
-        code = device.replace('pmbootstrap/aports/device/device-', '')
+        code = device.replace('pmaports/device/device-', '')
         result.add(code)
     return result
 
 
 def get_device_name(code):
-    infofile = 'pmbootstrap/aports/device/device-{}/deviceinfo'.format(code)
+    infofile = 'pmaports/device/device-{}/deviceinfo'.format(code)
     with open(infofile) as handle:
         raw = handle.read()
     name = re.search(r'deviceinfo_name="([^"]+)"', raw)
@@ -88,23 +87,29 @@ def get_device_wiki_page(device):
     global wiki_cache
     if not wiki_cache:
         wiki_cache = {}
-        raw = requests.get('https://wiki.postmarketos.org/index.php?title=Devices&action=raw').content.decode()
+        raw = requests.get(
+            'https://wiki.postmarketos.org/index.php?title=Special:CargoExport&tables=Devices&&fields=_pageName%3DPage%2CCodename&&order+by=%60cargo__Devices%60.%60Manufacturer%60%2C+%60cargo__Devices%60.%60Name%60&limit=5000&format=json').content.decode()
 
         # There is UTF-8 multibyte spacing in the table somehow
         clean = raw.encode('ascii', 'ignore').decode()
 
-        regex = r'\|-\s+\|[^\|]+\|[^\[]+\[\[([^\]]+)\]\]\W?\s+\|[^\|]+\|\s+([^\s]+)'
-        for match in re.findall(regex, clean):
-            page = match[0]
-            if '|' in page:
-                page = page.split('|')[0]
-            url = 'https://wiki.postmarketos.org/wiki/{}'.format(page)
-            wiki_cache[match[1]] = url
+        for row in json.loads(clean):
+            pagename = row['Page'].replace(' ', '_')
+            url = 'https://wiki.postmarketos.org/wiki/{}'.format(pagename)
+            wiki_cache[row['Codename']] = url
 
     if device in ['nokia-n9', 'nokia-n950']:
         return 'https://wiki.postmarketos.org/wiki/Nokia_N9'
     if device == 'samsung-p4wifi':
         return 'https://wiki.postmarketos.org/wiki/Samsung_Galaxy_Tab_10.1%22_(samsung-p4wifi)'
+    if device == 'ouya-ouya':
+        return 'https://wiki.postmarketos.org/wiki/Ouya_(ouya-ouya)'
+    if device in ['raspberry-pi3', 'raspberry-pi']:
+        return 'https://wiki.postmarketos.org/wiki/Raspberry_Pi'
+    if device == 'samsung-i8200':
+        return 'https://wiki.postmarketos.org/wiki/Samsung_Galaxy_SIII_mini_Value_Edition_(samsung-i8200)'
+    if device == 'semc-smultron':
+        return 'https://wiki.postmarketos.org/wiki/Sony_Ericsson_Xperia_mini_(semc-smultron)'
     return wiki_cache[device]
 
 
@@ -112,7 +117,7 @@ def get_device_wiki_page(device):
 def devices_over_time(args):
     init()
 
-    initial_commit = 'bfde354b22ae4efd79d1036f79a9aeb1ff1927ce'
+    initial_commit = '1c0ff6aa23b9e3ae6900f845021a587bb1280495'
     commits = get_commit_per_day(initial_commit, 'master')
     dataset = []
     for commit in commits:
